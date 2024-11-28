@@ -126,7 +126,6 @@ def parse_to_packets(hex_string):
             index += 2
         else:
             # Get sample size based on header
-            print(index)
             sample_size = get_sample_size(header)
 
             # Skip to relative index 19 (18 characters ahead from the current index)
@@ -154,4 +153,110 @@ def parse_to_packets(hex_string):
 
     return packets
 
+def get_header_name(header):
+    """
+    Returns the name corresponding to the given header.
 
+    Args:
+        header (str): The header code.
+
+    Returns:
+        str: The name of the header.
+
+    Raises:
+        ValueError: If the header is unknown.
+    """
+    header_map = {
+        "00": "WV_TRANST_IMPED",
+        "01": "WV_THERAPY",
+        "02": "WV_IMU",
+        "03": "WV_DIGITAL_EVENTS",
+        "FE": "WV_FILLER",
+        "FF": "WV_NO_DATA",
+    }
+
+    if header not in header_map:
+        raise ValueError("Unknown header")
+
+    return header_map[header]
+
+def parse_to_data_frame(hex_list):
+    """
+    Converts a list of hex packet substrings into a DataFrame with the decoded information.
+
+    Args:
+        hex_list (list): A list of hex strings representing packets.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the decoded packet information.
+    """
+    output_list = []
+
+    # Iterate over the list of hex substrings
+    for sub_string in hex_list:
+        string_index = 0
+        samples = []
+
+        # Extract header and determine sample size and name
+        header = sub_string[string_index:string_index + 2]
+        sample_size = get_sample_size(header)
+        header = get_header_name(header)
+        string_index += 2
+
+        # Extract RTC timestamp
+        RTC_timestamp = convert_hex_to_decimal(sub_string[string_index:string_index + 8], "little")
+        string_index += 16
+
+        # Extract number of samples
+        num_samples = convert_hex_to_decimal(sub_string[string_index:string_index + 4], "little")
+        string_index += 4
+
+        # Extract system timestamp
+        sys_timestamp = convert_hex_to_decimal(sub_string[string_index:string_index + 8], "little")
+        string_index += 8
+
+        # Extract sequence number
+        sequence_num = convert_hex_to_decimal(sub_string[string_index:string_index + 4], "little")
+        string_index += 4
+
+        if header != "WV_IMU":
+            # Standard packet processing
+            for _ in range(num_samples):
+                current_sample = convert_hex_to_decimal(sub_string[string_index:string_index + sample_size * 2], "little")
+                samples.append(current_sample)
+                string_index += sample_size
+        else:
+            # Special handling for IMU packets
+            for _ in range(num_samples):
+                current_sample = []
+                for subsample in range(6):
+                    if subsample < 3:
+                        current_subsample = convert_hex_to_decimal(sub_string[string_index:string_index + 4], "little")
+                        string_index += 4
+                        current_sample.append(current_subsample)
+                    else:
+                        gyro_index = string_index - 12 + (num_samples * 12)
+                        current_subsample = convert_hex_to_decimal(sub_string[gyro_index:gyro_index + 4], "little")
+                        gyro_index += 4
+                        current_sample.append(current_subsample)
+                samples.append(", ".join(map(str, current_sample)))
+
+        # Store packet data
+        packet_data = [header, RTC_timestamp, num_samples, sys_timestamp, sequence_num] + samples
+        output_list.append(packet_data)
+
+    # Find the maximum length of any list in output_list
+    max_length = max(len(packet) for packet in output_list)
+
+    # Pad all lists to the maximum length with None
+    padded_list = [packet + [None] * (max_length - len(packet)) for packet in output_list]
+
+    # Convert to DataFrame
+    column_names = ["header", "RTC_timestamp", "num_samples", "sys_timestamp", "sequence_num"] + \
+                   [f"sample_{i + 1}" for i in range(max_length - 5)]
+    output_df = pd.DataFrame(padded_list, columns=column_names)
+
+    return output_df
+
+packet_list = parse_to_packets(hex_string)
+raw_df_test = parse_to_data_frame(packet_list)

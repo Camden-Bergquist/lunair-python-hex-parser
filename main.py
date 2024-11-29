@@ -1,15 +1,8 @@
+## Packages.
+
 import pandas as pd
 import numpy as np
 import os
-
-# Reads in the file
-with open("raw data/wavhex.txt", "r") as file:
-    raw_hex = file.read()
-
-# Gets rid of the meaningless 0x prefix before every 2-digit hex value and removes commas from the string.
-# `hex_string` is now a clean hex string, ready to be processed.
-no_prefix = raw_hex.replace("0x", "")
-hex_string = "".join(no_prefix).replace(",", "")
 
 ## Function Definitions:
 
@@ -258,11 +251,6 @@ def parse_to_data_frame(hex_list):
 
     return output_df
 
-
-# Converts the clean hex string into a list of substring packets, and then into a rough dataframe.
-packet_list = parse_to_packets(hex_string)
-raw_df = parse_to_data_frame(packet_list)
-
 def extract_IMU_values(input_string, channel):
     """
     Extracts IMU values from the input string and returns the value of the specified channel.
@@ -386,8 +374,75 @@ def process_data_frame_step_2(processed_df):
 
     return processed_df
 
-step_1_df = process_data_frame_step_1(raw_df)
-step_2_df = process_data_frame_step_2(step_1_df)
-clean_df = step_2_df.drop(columns=['value', 'header', 'RTC_timestamp', 'num_samples'])
+## Main program loop.
 
-clean_df.to_csv("processed data/output.csv", na_rep = "NA", index = False)
+def main():
+    while True:
+        # Get the list of applicable files
+        folder_path = "raw data"
+        applicable_extensions = (".txt", ".hex")
+        files = [f for f in os.listdir(folder_path) if f.endswith(applicable_extensions)]
+
+        # Check if there are any applicable files in `raw data`
+        if not files:
+            print("No applicable files found in the `/raw data` folder. Program will terminate.")
+            return  # Exit the program
+
+        print("Below is a list of files that can be processed: \n")
+        for idx, file_name in enumerate(files, start=1):
+            print(f"[{idx}] {file_name}")
+        print("\n")
+
+        while True:
+            try:
+                choice = int(input("Enter the number of the file you want to process: "))
+                if 1 <= choice <= len(files):
+                    selected_file = files[choice - 1]
+                    break
+                else:
+                    print(f"Please enter a number between 1 and {len(files)}.")
+            except ValueError:
+                print(f"Invalid input. Please enter a number between 1 and {len(files)}.")
+
+        # Store the selected file name without extension
+        selected_file_base = os.path.splitext(selected_file)[0]
+
+        # Open the selected file
+        with open(os.path.join(folder_path, selected_file), "r") as file:
+            raw_hex = file.read()
+
+        # Gets rid of the meaningless 0x prefix before every 2-digit hex value and removes commas from the string.
+        # `hex_string` is now a clean hex string, ready to be processed.
+        no_prefix = raw_hex.replace("0x", "")
+        hex_string = "".join(no_prefix).replace(",", "")
+
+        ## Existing logic for processing hex strings into clean DataFrame
+        # Convert the clean hex string into packets and then to a DataFrame
+        packet_list = parse_to_packets(hex_string)
+        raw_df = parse_to_data_frame(packet_list)
+
+        step_1_df = process_data_frame_step_1(raw_df)
+        step_2_df = process_data_frame_step_2(step_1_df)
+        clean_df = step_2_df.drop(columns=['value', 'header', 'RTC_timestamp', 'num_samples'])
+
+        # Save the output
+        os.makedirs("processed data", exist_ok=True)  # Ensure the folder exists
+        output_file = os.path.join("processed data", f"{selected_file_base}_processed.csv")
+        clean_df.to_csv(output_file, na_rep="NA", index=False)
+
+        print(f"File processed successfully. The output file can be found in the `/processed data` folder.")
+
+        # Ask user whether to process another file
+        while True:
+            restart = input("Would you like to process another file (y/n)? ").strip().lower()
+            if restart == 'y':
+                break  # Restart the script
+            elif restart == 'n':
+                print("Exiting program.")
+                return  # Terminate the program
+            else:
+                print("Invalid input. Please respond with 'y' or 'n'.")
+
+# Execute the program.
+if __name__ == "__main__":
+    main()

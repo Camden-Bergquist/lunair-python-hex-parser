@@ -511,23 +511,23 @@ def prompt_with_timeout(prompt_message, timeout):
     Returns:
         str: The user's input, or None if the timeout expires.
     """
-    def timeout_handler():
-        """Exit the program if the timeout expires."""
-        print("\nNo response given. Exiting program.")
+    response = []
+
+    def get_input():
+        """Read input from the user and store it in the response list."""
+        user_input = input(prompt_message).strip()
+        response.append(user_input)
+
+    input_thread = td_Thread(target=get_input)
+    input_thread.start()
+
+    # Wait for the thread to complete or timeout
+    input_thread.join(timeout)
+    if input_thread.is_alive():
+        print("\nUser timed out. Terminating program.")
         sys_exit()
 
-    # Set up a timer to terminate the program after the timeout
-    timer = td_Timer(timeout, timeout_handler)
-    timer.start()
-
-    try:
-        # Prompt the user for input
-        response = input(prompt_message).strip()
-    finally:
-        # Cancel the timer if the user responds
-        timer.cancel()
-
-    return response
+    return response[0] if response else None
 
 def read_file_with_progress(folder_path, selected_file, chunk_size=1024):
     file_path = os_path.join(folder_path, selected_file)
@@ -598,7 +598,7 @@ def clean_hex_string(raw_hex):
 def main():
     while True:
         # Get the list of applicable files
-        folder_path = "raw data"
+        folder_path = "raw_data"
         applicable_extensions = (".txt", ".hex")
         files = [f for f in os_listdir(folder_path) if f.endswith(applicable_extensions)]
 
@@ -648,8 +648,8 @@ def main():
         clean_df = step_2_df.drop(columns=['value', 'header', 'RTC_timestamp', 'num_samples'])
 
         # Save the output
-        os_makedirs("processed data", exist_ok=True)  # Ensure the folder exists
-        output_file = os_path.join("processed data", f"{selected_file_base}_processed.csv")
+        os_makedirs("processed_data", exist_ok=True)  # Ensure the folder exists
+        output_file = os_path.join("processed_data", f"{selected_file_base}_processed.csv")
         save_with_progress_bar(clean_df, output_file)
 
         elapsed_time = tme_time() - start_time
@@ -665,15 +665,19 @@ def main():
         print("The output file can be found in the `/processed data` folder. \n")
 
         # Ask user whether to process another file wieth a 300-second timeout
+
+        # Example Usage
         while True:
-            restart = prompt_with_timeout("Would you like to process another file (y/n)? ", 300).lower()
-            if restart == 'y':
+            restart = prompt_with_timeout("Would you like to process another file (y/n)? ", 300)
+            if restart and restart.lower() == 'y':
+                print("\n")
                 break  # Restart the script
-            elif restart == 'n':
-                print("Exiting program.")
+            elif restart and restart.lower() == 'n':
+                print("Terminating program.")
                 sys_exit()  # Terminate the program
             else:
-                print("Invalid input. Please respond with 'y' or 'n'.") 
+                print("Invalid input. Please respond with 'y' or 'n'.")
+
 
 # Execute the program.
 if __name__ == "__main__":

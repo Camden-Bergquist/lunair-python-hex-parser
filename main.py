@@ -1,13 +1,15 @@
 ## Packages.
 
-import pandas as pd
-import numpy as np
-import os
-import progressbar
-import threading
-import time
-import itertools
-import sys
+## Packages.
+
+from os import listdir as os_listdir, makedirs as os_makedirs, path as os_path
+from progressbar import Bar as pgb_Bar, Percentage as pgb_Percentage, SimpleProgress as pgb_SimpleProgress, ProgressBar as pgb_ProgressBar
+from pandas import DataFrame as pd_DataFrame, melt as pd_melt, to_numeric as pd_to_numeric
+from numpy import nan as np_nan, where as np_where
+from threading import Thread as td_Thread, Event as td_Event, Timer as td_Timer
+from time import sleep as tme_sleep
+from itertools import cycle as iter_cycle
+from sys import stdout as sys_stdout, exit as sys_exit
 
 ## Function Definitions:
 
@@ -116,11 +118,11 @@ def parse_to_packets(hex_string):
 
     # Initialize the progress bar
     widgets = [
-        progressbar.Bar(marker='█', left='|', right='|'),  # Customized bar style
-        ' ', progressbar.Percentage(),  # Show percentage
-        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+        pgb_Bar(marker='█', left='|', right='|'),  # Customized bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=hex_length)
+    bar = pgb_ProgressBar(widgets=widgets, max_value=hex_length)
 
 
     while index < hex_length:
@@ -202,17 +204,17 @@ def parse_to_data_frame(hex_list):
         hex_list (list): A list of hex strings representing packets.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the decoded packet information.
+        pd_DataFrame: A DataFrame containing the decoded packet information.
     """
     print("[2/5]: Converting packets to dataframe...")
 
     # Initialize progress bar
     widgets = [
-        progressbar.Bar(marker='█', left='|', right='|'),  # Customized bar style
-        ' ', progressbar.Percentage(),  # Show percentage
-        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+        pgb_Bar(marker='█', left='|', right='|'),  # Customized bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=len(hex_list))
+    bar = pgb_ProgressBar(widgets=widgets, max_value=len(hex_list))
 
     output_list = []
 
@@ -283,7 +285,7 @@ def parse_to_data_frame(hex_list):
     # Convert to DataFrame
     column_names = ["header", "RTC_timestamp", "num_samples", "sys_timestamp", "sequence_num"] + \
                    [f"sample_{i + 1}" for i in range(max_length - 5)]
-    output_df = pd.DataFrame(padded_list, columns=column_names)
+    output_df = pd_DataFrame(padded_list, columns=column_names)
 
     return output_df
 
@@ -328,20 +330,20 @@ def process_data_frame_step_1(raw_df_output):
     Includes a charging-style progress bar indicating progress through 10 steps.
 
     Args:
-        raw_df_output (pd.DataFrame): The raw input DataFrame.
+        raw_df_output (pd_DataFrame): The raw input DataFrame.
 
     Returns:
-        pd.DataFrame: The processed DataFrame.
+        pd_DataFrame: The processed DataFrame.
     """
     print("[3/5]: Processing dataframe...")
 
     # Initialize the progress bar
     widgets = [
-        progressbar.Bar(marker='█', left='|', right='|'),  # Charging bar style
-        ' ', progressbar.Percentage(),  # Show percentage
-        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+        pgb_Bar(marker='█', left='|', right='|'),  # Charging bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=10)
+    bar = pgb_ProgressBar(widgets=widgets, max_value=10)
 
     # Step 1: Filter out WV_DIGITAL_EVENTS
     processed_df = raw_df_output[raw_df_output['header'] != "WV_DIGITAL_EVENTS"].copy()
@@ -364,7 +366,7 @@ def process_data_frame_step_1(raw_df_output):
     bar.update(4)
 
     # Step 5: Create `elapsed_time` column
-    processed_df['time_elapsed'] = np.where(
+    processed_df['time_elapsed'] = np_where(
         processed_df['header'] == "WV_TRANST_IMPED",
         processed_df['sequence_num'] + (1 / 30) * processed_df['sample_num'],
         processed_df['sequence_num'] + (1 / 50) * processed_df['sample_num']
@@ -384,15 +386,15 @@ def process_data_frame_step_1(raw_df_output):
     bar.update(8)
 
     # Step 9: Create TTI column
-    processed_df['TTI'] = np.where(
+    processed_df['TTI'] = np_where(
         processed_df['header'] == "WV_TRANST_IMPED",
         processed_df['value'],
-        np.nan
+        np_nan
     )
     bar.update(9)
 
     # Step 10: Convert TTI to ohms
-    processed_df['TTI'] = pd.to_numeric(processed_df['TTI'], errors='coerce')
+    processed_df['TTI'] = pd_to_numeric(processed_df['TTI'], errors='coerce')
     processed_df['TTI'] = (processed_df['TTI'] * 0.04176689) - 8.5538812
     bar.update(10)
 
@@ -408,19 +410,19 @@ def process_data_frame_step_2(processed_df):
     Includes a charging-style progress bar for row processing.
 
     Args:
-        processed_df (pd.DataFrame): DataFrame from the previous processing step.
+        processed_df (pd_DataFrame): DataFrame from the previous processing step.
 
     Returns:
-        pd.DataFrame: Updated DataFrame with new columns for IMU values.
+        pd_DataFrame: Updated DataFrame with new columns for IMU values.
     """
 
     def extract_channel(header, value, channel):
         if header == "WV_TRANST_IMPED":
-            return np.nan
+            return np_nan
         elif header == "WV_IMU":
             return extract_IMU_values(value, channel)
         else:
-            return np.nan
+            return np_nan
 
     print("[4/5]: Extracting IMU values...")
 
@@ -432,19 +434,19 @@ def process_data_frame_step_2(processed_df):
 
     # Initialize the progress bar
     widgets = [
-        progressbar.Bar(marker='█', left='|', right='|'),  # Charging bar style
-        ' ', progressbar.Percentage(),  # Show percentage
-        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+        pgb_Bar(marker='█', left='|', right='|'),  # Charging bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=num_rows)
+    bar = pgb_ProgressBar(widgets=widgets, max_value=num_rows)
 
     # Initialize empty columns
-    processed_df['accel_X'] = np.nan
-    processed_df['accel_Y'] = np.nan
-    processed_df['accel_Z'] = np.nan
-    processed_df['gyro_X'] = np.nan
-    processed_df['gyro_Y'] = np.nan
-    processed_df['gyro_Z'] = np.nan
+    processed_df['accel_X'] = np_nan
+    processed_df['accel_Y'] = np_nan
+    processed_df['accel_Z'] = np_nan
+    processed_df['gyro_X'] = np_nan
+    processed_df['gyro_Y'] = np_nan
+    processed_df['gyro_Z'] = np_nan
 
     # Iterate through each row and update progress bar
     for idx, (index, row) in enumerate(processed_df.iterrows()):
@@ -470,22 +472,22 @@ def save_with_spinner(clean_df, output_file):
     Save the DataFrame to a file with a spinner indicating progress.
 
     Args:
-        clean_df (pd.DataFrame): The DataFrame to save.
+        clean_df (pd_DataFrame): The DataFrame to save.
         output_file (str): The path to save the file.
     """
     def spinner():
         """Run a spinner until the main saving task is completed."""
-        spinner_cycle = itertools.cycle("|/-\\")  # Spinner animation
+        spinner_cycle = iter_cycle("|/-\\")  # Spinner animation
         while not stop_spinner.is_set():
-            sys.stdout.write(f"\r[5/5]: Saving file... {next(spinner_cycle)}")
-            sys.stdout.flush()
-            time.sleep(0.1)
-        sys.stdout.write("\rFile processed successfully. The output file can be found in the `/processed data` folder.     \n")  # Overwrite spinner with completion message
-        sys.stdout.flush()
+            sys_stdout.write(f"\r[5/5]: Saving file... {next(spinner_cycle)}")
+            sys_stdout.flush()
+            tme_sleep(0.1)
+        sys_stdout.write("\rFile processed successfully. The output file can be found in the `/processed data` folder.     \n")  # Overwrite spinner with completion message
+        sys_stdout.flush()
 
     # Initialize spinner control
-    stop_spinner = threading.Event()
-    spinner_thread = threading.Thread(target=spinner)
+    stop_spinner = td_Event()
+    spinner_thread = td_Thread(target=spinner)
 
     print("[5/5]: Saving file...")
     spinner_thread.start()  # Start the spinner in a separate thread
@@ -512,10 +514,10 @@ def prompt_with_timeout(prompt_message, timeout):
     def timeout_handler():
         """Exit the program if the timeout expires."""
         print("\nNo response given. Exiting program.")
-        sys.exit()
+        sys_exit()
 
     # Set up a timer to terminate the program after the timeout
-    timer = threading.Timer(timeout, timeout_handler)
+    timer = td_Timer(timeout, timeout_handler)
     timer.start()
 
     try:
@@ -535,7 +537,7 @@ def main():
         # Get the list of applicable files
         folder_path = "raw data"
         applicable_extensions = (".txt", ".hex")
-        files = [f for f in os.listdir(folder_path) if f.endswith(applicable_extensions)]
+        files = [f for f in os_listdir(folder_path) if f.endswith(applicable_extensions)]
 
         # Check if there are any applicable files in `raw data`
         if not files:
@@ -559,10 +561,10 @@ def main():
                 print(f"Invalid input. Please enter a number between 1 and {len(files)}.")
 
         # Store the selected file name without extension
-        selected_file_base = os.path.splitext(selected_file)[0]
+        selected_file_base = os_path.splitext(selected_file)[0]
 
         # Open the selected file
-        with open(os.path.join(folder_path, selected_file), "r") as file:
+        with open(os_path.join(folder_path, selected_file), "r") as file:
             raw_hex = file.read()
 
         # Gets rid of the meaningless 0x prefix before every 2-digit hex value and removes commas from the string.
@@ -580,8 +582,8 @@ def main():
         clean_df = step_2_df.drop(columns=['value', 'header', 'RTC_timestamp', 'num_samples'])
 
         # Save the output
-        os.makedirs("processed data", exist_ok=True)  # Ensure the folder exists
-        output_file = os.path.join("processed data", f"{selected_file_base}_processed.csv")
+        os_makedirs("processed data", exist_ok=True)  # Ensure the folder exists
+        output_file = os_path.join("processed data", f"{selected_file_base}_processed.csv")
         save_with_spinner(clean_df, output_file)
 
         # Ask user whether to process another file with a 300-second timeout
@@ -591,7 +593,7 @@ def main():
                 break  # Restart the script
             elif restart == 'n':
                 print("Exiting program.")
-                sys.exit()  # Terminate the program
+                sys_exit()  # Terminate the program
             else:
                 print("Invalid input. Please respond with 'y' or 'n'.") 
 

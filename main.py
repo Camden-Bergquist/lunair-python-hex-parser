@@ -3,6 +3,11 @@
 import pandas as pd
 import numpy as np
 import os
+import progressbar
+import threading
+import time
+import itertools
+import sys
 
 ## Function Definitions:
 
@@ -107,6 +112,17 @@ def parse_to_packets(hex_string):
     index = 0
     hex_length = len(hex_string)
 
+    print("[1/5]: Parsing hex string into packets... ")
+
+    # Initialize the progress bar
+    widgets = [
+        progressbar.Bar(marker='█', left='|', right='|'),  # Customized bar style
+        ' ', progressbar.Percentage(),  # Show percentage
+        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=hex_length)
+
+
     while index < hex_length:
         # Store starting index
         packet_start = index
@@ -143,6 +159,11 @@ def parse_to_packets(hex_string):
 
             # Update the starting index for the next packet
             index = packet_end
+
+        # Update the progress bar
+        bar.update(index)
+
+    bar.finish()
 
     return packets
 
@@ -183,10 +204,20 @@ def parse_to_data_frame(hex_list):
     Returns:
         pd.DataFrame: A DataFrame containing the decoded packet information.
     """
+    print("[2/5]: Converting packets to dataframe...")
+
+    # Initialize progress bar
+    widgets = [
+        progressbar.Bar(marker='█', left='|', right='|'),  # Customized bar style
+        ' ', progressbar.Percentage(),  # Show percentage
+        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=len(hex_list))
+
     output_list = []
 
     # Iterate over the list of hex substrings
-    for sub_string in hex_list:
+    for i, sub_string in enumerate(hex_list):
         string_index = 0
         samples = []
 
@@ -238,6 +269,11 @@ def parse_to_data_frame(hex_list):
         packet_data = [header, RTC_timestamp, num_samples, sys_timestamp, sequence_num] + samples
         output_list.append(packet_data)
 
+        # Update the progress bar
+        bar.update(i + 1)
+
+    bar.finish()
+
     # Find the maximum length of any list in output_list
     max_length = max(len(packet) for packet in output_list)
 
@@ -287,8 +323,29 @@ def extract_IMU_values(input_string, channel):
     return channel_map[channel]
 
 def process_data_frame_step_1(raw_df_output):
+    """
+    Processes the raw DataFrame step by step.
+    Includes a charging-style progress bar indicating progress through 10 steps.
+
+    Args:
+        raw_df_output (pd.DataFrame): The raw input DataFrame.
+
+    Returns:
+        pd.DataFrame: The processed DataFrame.
+    """
+    print("[3/5]: Processing dataframe...")
+
+    # Initialize the progress bar
+    widgets = [
+        progressbar.Bar(marker='█', left='|', right='|'),  # Charging bar style
+        ' ', progressbar.Percentage(),  # Show percentage
+        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=10)
+
     # Step 1: Filter out WV_DIGITAL_EVENTS
     processed_df = raw_df_output[raw_df_output['header'] != "WV_DIGITAL_EVENTS"].copy()
+    bar.update(1)
 
     # Step 2: Turn sample columns into rows
     processed_df = processed_df.melt(
@@ -296,12 +353,15 @@ def process_data_frame_step_1(raw_df_output):
         var_name='sample_num',
         value_name='value'
     )
+    bar.update(2)
 
     # Step 3: Filter out NAs
     processed_df = processed_df[~processed_df['value'].isna()]
+    bar.update(3)
 
     # Step 4: Turn sample_num into numeric
     processed_df['sample_num'] = processed_df['sample_num'].str.extract(r'(\d+)').astype(int)
+    bar.update(4)
 
     # Step 5: Create `elapsed_time` column
     processed_df['time_elapsed'] = np.where(
@@ -309,15 +369,19 @@ def process_data_frame_step_1(raw_df_output):
         processed_df['sequence_num'] + (1 / 30) * processed_df['sample_num'],
         processed_df['sequence_num'] + (1 / 50) * processed_df['sample_num']
     )
+    bar.update(5)
 
     # Step 6: Rearrange columns
     processed_df = processed_df[['header', 'RTC_timestamp', 'time_elapsed', 'sequence_num', 'num_samples', 'value']]
+    bar.update(6)
 
     # Step 7: Sort by `time_elapsed`
     processed_df = processed_df.sort_values(by='time_elapsed')
+    bar.update(7)
 
     # Step 8: Convert `value` to string
     processed_df['value'] = processed_df['value'].astype(str)
+    bar.update(8)
 
     # Step 9: Create TTI column
     processed_df['TTI'] = np.where(
@@ -325,10 +389,14 @@ def process_data_frame_step_1(raw_df_output):
         processed_df['value'],
         np.nan
     )
+    bar.update(9)
 
     # Step 10: Convert TTI to ohms
     processed_df['TTI'] = pd.to_numeric(processed_df['TTI'], errors='coerce')
     processed_df['TTI'] = (processed_df['TTI'] * 0.04176689) - 8.5538812
+    bar.update(10)
+
+    bar.finish()
 
     return processed_df
 
@@ -336,6 +404,8 @@ def process_data_frame_step_2(processed_df):
     """
     Adds IMU acceleration and gyroscope data (accel_X, accel_Y, accel_Z, gyro_X, gyro_Y, gyro_Z)
     by applying `extract_IMU_values` function row-wise to the DataFrame.
+
+    Includes a charging-style progress bar for row processing.
 
     Args:
         processed_df (pd.DataFrame): DataFrame from the previous processing step.
@@ -352,27 +422,111 @@ def process_data_frame_step_2(processed_df):
         else:
             return np.nan
 
-    # Apply extract_channel function row-wise for each channel
-    processed_df['accel_X'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "accel_x"), axis=1
-    )
-    processed_df['accel_Y'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "accel_y"), axis=1
-    )
-    processed_df['accel_Z'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "accel_z"), axis=1
-    )
-    processed_df['gyro_X'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "gyro_x"), axis=1
-    )
-    processed_df['gyro_Y'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "gyro_y"), axis=1
-    )
-    processed_df['gyro_Z'] = processed_df.apply(
-        lambda row: extract_channel(row['header'], row['value'], "gyro_z"), axis=1
-    )
+    print("[4/5]: Extracting IMU values...")
 
+    # Calculate the total number of rows at the start
+    num_rows = len(processed_df)
+    if num_rows == 0:
+        print("The DataFrame is empty. Skipping Step 2.")
+        return processed_df  # Return empty DataFrame
+
+    # Initialize the progress bar
+    widgets = [
+        progressbar.Bar(marker='█', left='|', right='|'),  # Charging bar style
+        ' ', progressbar.Percentage(),  # Show percentage
+        ' ', progressbar.SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    bar = progressbar.ProgressBar(widgets=widgets, max_value=num_rows)
+
+    # Initialize empty columns
+    processed_df['accel_X'] = np.nan
+    processed_df['accel_Y'] = np.nan
+    processed_df['accel_Z'] = np.nan
+    processed_df['gyro_X'] = np.nan
+    processed_df['gyro_Y'] = np.nan
+    processed_df['gyro_Z'] = np.nan
+
+    # Iterate through each row and update progress bar
+    for idx, (index, row) in enumerate(processed_df.iterrows()):
+        header = row['header']
+        value = row['value']
+
+        # Update IMU columns for the current row
+        processed_df.at[index, 'accel_X'] = extract_channel(header, value, "accel_x")
+        processed_df.at[index, 'accel_Y'] = extract_channel(header, value, "accel_y")
+        processed_df.at[index, 'accel_Z'] = extract_channel(header, value, "accel_z")
+        processed_df.at[index, 'gyro_X'] = extract_channel(header, value, "gyro_x")
+        processed_df.at[index, 'gyro_Y'] = extract_channel(header, value, "gyro_y")
+        processed_df.at[index, 'gyro_Z'] = extract_channel(header, value, "gyro_z")
+
+        # Update the progress bar
+        bar.update(idx + 1)
+
+    bar.finish()
     return processed_df
+
+def save_with_spinner(clean_df, output_file):
+    """
+    Save the DataFrame to a file with a spinner indicating progress.
+
+    Args:
+        clean_df (pd.DataFrame): The DataFrame to save.
+        output_file (str): The path to save the file.
+    """
+    def spinner():
+        """Run a spinner until the main saving task is completed."""
+        spinner_cycle = itertools.cycle("|/-\\")  # Spinner animation
+        while not stop_spinner.is_set():
+            sys.stdout.write(f"\r[5/5]: Saving file... {next(spinner_cycle)}")
+            sys.stdout.flush()
+            time.sleep(0.1)
+        sys.stdout.write("\rFile processed successfully. The output file can be found in the `/processed data` folder.     \n")  # Overwrite spinner with completion message
+        sys.stdout.flush()
+
+    # Initialize spinner control
+    stop_spinner = threading.Event()
+    spinner_thread = threading.Thread(target=spinner)
+
+    print("[5/5]: Saving file...")
+    spinner_thread.start()  # Start the spinner in a separate thread
+
+    try:
+        # Save the DataFrame to a file
+        clean_df.to_csv(output_file, na_rep="NA", index=False)
+    finally:
+        # Stop the spinner
+        stop_spinner.set()
+        spinner_thread.join()
+
+def prompt_with_timeout(prompt_message, timeout):
+    """
+    Prompt the user with a message and terminate if no response is given within the timeout.
+
+    Args:
+        prompt_message (str): The message to display for the prompt.
+        timeout (int): The timeout duration in seconds.
+
+    Returns:
+        str: The user's input, or None if the timeout expires.
+    """
+    def timeout_handler():
+        """Exit the program if the timeout expires."""
+        print("\nNo response given. Exiting program.")
+        sys.exit()
+
+    # Set up a timer to terminate the program after the timeout
+    timer = threading.Timer(timeout, timeout_handler)
+    timer.start()
+
+    try:
+        # Prompt the user for input
+        response = input(prompt_message).strip()
+    finally:
+        # Cancel the timer if the user responds
+        timer.cancel()
+
+    return response
+
 
 ## Main program loop.
 
@@ -428,20 +582,18 @@ def main():
         # Save the output
         os.makedirs("processed data", exist_ok=True)  # Ensure the folder exists
         output_file = os.path.join("processed data", f"{selected_file_base}_processed.csv")
-        clean_df.to_csv(output_file, na_rep="NA", index=False)
+        save_with_spinner(clean_df, output_file)
 
-        print(f"File processed successfully. The output file can be found in the `/processed data` folder.")
-
-        # Ask user whether to process another file
+        # Ask user whether to process another file with a 300-second timeout
         while True:
-            restart = input("Would you like to process another file (y/n)? ").strip().lower()
+            restart = prompt_with_timeout("Would you like to process another file (y/n)? ", 300).lower()
             if restart == 'y':
                 break  # Restart the script
             elif restart == 'n':
                 print("Exiting program.")
-                return  # Terminate the program
+                sys.exit()  # Terminate the program
             else:
-                print("Invalid input. Please respond with 'y' or 'n'.")
+                print("Invalid input. Please respond with 'y' or 'n'.") 
 
 # Execute the program.
 if __name__ == "__main__":

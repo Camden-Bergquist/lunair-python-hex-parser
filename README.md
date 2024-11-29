@@ -14,7 +14,7 @@ The `\processed_data` folder will be empty upon installation.
 
 ## Use:
 
-To use the parser, open the `Hex Parser (vX.X.X).exe` file. The terminal will read the contents of the `/raw_data` folder, and then prompt the user to select which of the files within, as denoted by assigned numbers, to parse. This list will contain solely files with the `.hex` and `.txt` file extensions, and ignore everything else. **In order for the program to properly parse a file, that file must be contained within the `/raw_data` folder before the executable is run, in addition to being the proper file type (`.hex`, `.txt`).** If no applicable files are present in the `raw_data` folder, the program will terminate.
+To use the parser, open the `Hex Parser (vX.X.X).exe` file. The terminal will read the contents of the `/raw_data` folder, and then prompt the user to select which of the files within, as denoted by assigned numbers, to parse. This process may take a couple of seconds. The list will contain solely files with the `.hex` and `.txt` file extensions, and ignore everything else. **In order for the program to properly parse a file, that file must be contained within the `/raw_data` folder before the executable is run, in addition to being the proper file type (`.hex`, `.txt`).** If no applicable files are present in the `raw_data` folder, the program will terminate.
 
 Once the user selects an applicable file from the list, the parser wil read, process, and write the file in a series of steps. Loading bars for each step are present to ensure that the program hasn't stalled in some way. Large files are liable to take several minutes to process. Processed files can be found in the `/processed_data` folder, and are always formatted as csv files.
 

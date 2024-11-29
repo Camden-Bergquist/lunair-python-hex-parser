@@ -7,7 +7,7 @@ from progressbar import Bar as pgb_Bar, Percentage as pgb_Percentage, SimpleProg
 from pandas import DataFrame as pd_DataFrame, melt as pd_melt, to_numeric as pd_to_numeric
 from numpy import nan as np_nan, where as np_where
 from threading import Thread as td_Thread, Event as td_Event, Timer as td_Timer
-from time import sleep as tme_sleep
+from time import sleep as tme_sleep, time as tme_time
 from itertools import cycle as iter_cycle
 from sys import stdout as sys_stdout, exit as sys_exit
 
@@ -114,11 +114,11 @@ def parse_to_packets(hex_string):
     index = 0
     hex_length = len(hex_string)
 
-    print("[1/5]: Parsing hex string into packets... ")
+    print("[3/7]: Parsing hex string into packets... ")
 
     # Initialize the progress bar
     widgets = [
-        pgb_Bar(marker='█', left='|', right='|'),  # Customized bar style
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Customized bar style
         ' ', pgb_Percentage(),  # Show percentage
         ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
@@ -206,11 +206,11 @@ def parse_to_data_frame(hex_list):
     Returns:
         pd_DataFrame: A DataFrame containing the decoded packet information.
     """
-    print("[2/5]: Converting packets to dataframe...")
+    print("[4/7]: Converting packets to dataframe...")
 
     # Initialize progress bar
     widgets = [
-        pgb_Bar(marker='█', left='|', right='|'),  # Customized bar style
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Customized bar style
         ' ', pgb_Percentage(),  # Show percentage
         ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
@@ -335,11 +335,11 @@ def process_data_frame_step_1(raw_df_output):
     Returns:
         pd_DataFrame: The processed DataFrame.
     """
-    print("[3/5]: Processing dataframe...")
+    print("[5/7]: Processing dataframe...")
 
     # Initialize the progress bar
     widgets = [
-        pgb_Bar(marker='█', left='|', right='|'),  # Charging bar style
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Charging bar style
         ' ', pgb_Percentage(),  # Show percentage
         ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
@@ -424,7 +424,7 @@ def process_data_frame_step_2(processed_df):
         else:
             return np_nan
 
-    print("[4/5]: Extracting IMU values...")
+    print("[6/7]: Extracting IMU values...")
 
     # Calculate the total number of rows at the start
     num_rows = len(processed_df)
@@ -434,7 +434,7 @@ def process_data_frame_step_2(processed_df):
 
     # Initialize the progress bar
     widgets = [
-        pgb_Bar(marker='█', left='|', right='|'),  # Charging bar style
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Charging bar style
         ' ', pgb_Percentage(),  # Show percentage
         ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
     ]
@@ -467,38 +467,38 @@ def process_data_frame_step_2(processed_df):
     bar.finish()
     return processed_df
 
-def save_with_spinner(clean_df, output_file):
+def save_with_progress_bar(clean_df, output_file):
     """
-    Save the DataFrame to a file with a spinner indicating progress.
+    Save the DataFrame to a file with a progress bar indicating progress.
 
     Args:
         clean_df (pd_DataFrame): The DataFrame to save.
         output_file (str): The path to save the file.
     """
-    def spinner():
-        """Run a spinner until the main saving task is completed."""
-        spinner_cycle = iter_cycle("|/-\\")  # Spinner animation
-        while not stop_spinner.is_set():
-            sys_stdout.write(f"\r[5/5]: Saving file... {next(spinner_cycle)}")
-            sys_stdout.flush()
-            tme_sleep(0.1)
-        sys_stdout.write("\rFile processed successfully. The output file can be found in the `/processed data` folder.     \n")  # Overwrite spinner with completion message
-        sys_stdout.flush()
+    total_rows = len(clean_df)
 
-    # Initialize spinner control
-    stop_spinner = td_Event()
-    spinner_thread = td_Thread(target=spinner)
+    print("[7/7]: Writing output csv file...")
 
-    print("[5/5]: Saving file...")
-    spinner_thread.start()  # Start the spinner in a separate thread
+    # Initialize progress bar
+    widgets = [
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Charging bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    progress = pgb_ProgressBar(widgets=widgets, maxval=total_rows).start()
 
-    try:
-        # Save the DataFrame to a file
-        clean_df.to_csv(output_file, na_rep="NA", index=False)
-    finally:
-        # Stop the spinner
-        stop_spinner.set()
-        spinner_thread.join()
+    # Write the file incrementally
+    with open(output_file, 'w') as file:
+        # Write the header
+        file.write(",".join(clean_df.columns) + "\n")
+        progress.update(0)
+
+        # Write rows incrementally
+        for i, row in enumerate(clean_df.itertuples(index=False, name=None)):
+            file.write(",".join(map(str, row)) + "\n")
+            progress.update(i + 1)
+
+    progress.finish()
 
 def prompt_with_timeout(prompt_message, timeout):
     """
@@ -528,6 +528,69 @@ def prompt_with_timeout(prompt_message, timeout):
         timer.cancel()
 
     return response
+
+def read_file_with_progress(folder_path, selected_file, chunk_size=1024):
+    file_path = os_path.join(folder_path, selected_file)
+    file_size = os_path.getsize(file_path)  # Get the total file size
+
+    print("[1/7]: Reading raw input file...")
+    # Initialize progress bar.
+    widgets = [
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Customized bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    progress = pgb_ProgressBar(widgets=widgets, maxval=file_size).start()
+
+    raw_hex = []  # To store file content
+    with open(file_path, "r") as file:
+        read_bytes = 0
+        while chunk := file.read(chunk_size):
+            raw_hex.append(chunk)
+            read_bytes += len(chunk)
+            progress.update(read_bytes)  # Update the progress bar
+
+    progress.finish()
+    return "".join(raw_hex)  # Combine all chunks into a single string
+
+def clean_hex_string(raw_hex):
+    """
+    Cleans the raw_hex string by removing "0x" prefixes and commas, with a single progress bar.
+
+    Args:
+        raw_hex (str): The raw hex string to clean.
+
+    Returns:
+        str: A cleaned hex string.
+    """
+    total_size = len(raw_hex) + len(raw_hex.replace("0x", ""))  # Total progress for both operations
+
+
+    print("[2/7]: Preprocessing...")
+    # Initialize progress bar.
+    widgets = [
+        pgb_Bar(marker='█', left='|', right='|', fill = '—'),  # Customized bar style
+        ' ', pgb_Percentage(),  # Show percentage
+        ' ', pgb_SimpleProgress(format='(%s)' % '%(value)d/%(max_value)d'),  # Show current/max
+    ]
+    progress = pgb_ProgressBar(widgets=widgets, maxval=total_size).start()
+
+    # Step 1: Remove "0x"
+    no_prefix = raw_hex.replace("0x", "")
+    for i in range(len(raw_hex)):  # Simulate progress for this step
+        progress.update(i + 1)
+
+    # Step 2: Remove commas
+    hex_string = no_prefix.replace(",", "")
+    for i in range(len(no_prefix)):  # Simulate progress for this step
+        progress.update(len(raw_hex) + i + 1)
+
+    progress.finish()
+
+    # Debugging: Verify final result
+    assert hex_string == raw_hex.replace("0x", "").replace(",", ""), "Final result mismatch"
+
+    return hex_string
 
 
 ## Main program loop.
@@ -560,17 +623,20 @@ def main():
             except ValueError:
                 print(f"Invalid input. Please enter a number between 1 and {len(files)}.")
 
+        print("\n")
+
         # Store the selected file name without extension
         selected_file_base = os_path.splitext(selected_file)[0]
 
+        # Record the start time
+        start_time = tme_time()  
+
         # Open the selected file
-        with open(os_path.join(folder_path, selected_file), "r") as file:
-            raw_hex = file.read()
+        raw_hex = read_file_with_progress(folder_path, selected_file)
 
         # Gets rid of the meaningless 0x prefix before every 2-digit hex value and removes commas from the string.
         # `hex_string` is now a clean hex string, ready to be processed.
-        no_prefix = raw_hex.replace("0x", "")
-        hex_string = "".join(no_prefix).replace(",", "")
+        hex_string = clean_hex_string(raw_hex)
 
         ## Existing logic for processing hex strings into clean DataFrame
         # Convert the clean hex string into packets and then to a DataFrame
@@ -584,9 +650,21 @@ def main():
         # Save the output
         os_makedirs("processed data", exist_ok=True)  # Ensure the folder exists
         output_file = os_path.join("processed data", f"{selected_file_base}_processed.csv")
-        save_with_spinner(clean_df, output_file)
+        save_with_progress_bar(clean_df, output_file)
 
-        # Ask user whether to process another file with a 300-second timeout
+        elapsed_time = tme_time() - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+
+        print("\n")
+
+        if minutes < 1:
+            print(f"File processed successfully in {seconds:.2f} seconds.")
+        else:
+            print(f"File processed successfully in {int(minutes)} minutes and {seconds:.2f} seconds.")
+
+        print("The output file can be found in the `/processed data` folder. \n")
+
+        # Ask user whether to process another file wieth a 300-second timeout
         while True:
             restart = prompt_with_timeout("Would you like to process another file (y/n)? ", 300).lower()
             if restart == 'y':

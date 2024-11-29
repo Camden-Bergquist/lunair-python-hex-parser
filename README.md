@@ -5,7 +5,7 @@ Data parsing executable written for Lunair Medical in Python. Converts raw hex d
 
 ## Components:
 
-The compiled program comes in the form of one executable file (`Hex Parser (vX.X.X).exe`), three folders, and this readme. Two of the folders — `/raw_data` and `/processed_data` — are relevant to the operation of the executable. The other, `/<placeholder>`, contains resources necessary for the program to run, and should be left alone.
+The compiled program comes in the form of one executable file (`Hex Parser (vX.X.X).exe`), three folders, and this readme. Two of the folders — `/raw_data` and `/processed_data` — are relevant to the operation of the executable. The other, `/_internal`, contains resources necessary for the program to run, and should be left alone.
 
 Four files are contained in the `/raw_data` folder: `example_data.txt`, `example_data.hex`, `example_data_2_(large).txt`, and `example_data_2_(large).hex`. There is no functional difference between the `.hex` and `.txt` extensions for files of the same name; they are present in order to communicate that the parser can work with either file type. In effect, this means that there are really only two sets of sample data.
 

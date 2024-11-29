@@ -258,5 +258,136 @@ def parse_to_data_frame(hex_list):
 
     return output_df
 
+
+# Converts the clean hex string into a list of substring packets, and then into a rough dataframe.
 packet_list = parse_to_packets(hex_string)
-raw_df_test = parse_to_data_frame(packet_list)
+raw_df = parse_to_data_frame(packet_list)
+
+def extract_IMU_values(input_string, channel):
+    """
+    Extracts IMU values from the input string and returns the value of the specified channel.
+
+    Args:
+        input_string (str): A string containing IMU values separated by commas and spaces.
+        channel (str): The channel to extract (e.g., 'accel_x', 'gyro_y').
+
+    Returns:
+        float: The extracted value for the specified channel.
+
+    Raises:
+        ValueError: If the specified channel is invalid.
+    """
+    # Split the input string by ", " to get numeric values
+    values = [float(val) for val in input_string.split(", ")]
+
+    # Assign the extracted values to respective variables
+    accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z = values
+
+    # Return the requested channel value
+    channel_map = {
+        "accel_x": accel_x,
+        "accel_y": accel_y,
+        "accel_z": accel_z,
+        "gyro_x": gyro_x,
+        "gyro_y": gyro_y,
+        "gyro_z": gyro_z,
+    }
+
+    if channel not in channel_map:
+        raise ValueError("Invalid Channel")
+
+    return channel_map[channel]
+
+def process_data_frame_step_1(raw_df_output):
+    # Step 1: Filter out WV_DIGITAL_EVENTS
+    processed_df = raw_df_output[raw_df_output['header'] != "WV_DIGITAL_EVENTS"].copy()
+
+    # Step 2: Turn sample columns into rows
+    processed_df = processed_df.melt(
+        id_vars=['header', 'RTC_timestamp', 'sys_timestamp', 'num_samples', 'sequence_num'],
+        var_name='sample_num',
+        value_name='value'
+    )
+
+    # Step 3: Filter out NAs
+    processed_df = processed_df[~processed_df['value'].isna()]
+
+    # Step 4: Turn sample_num into numeric
+    processed_df['sample_num'] = processed_df['sample_num'].str.extract(r'(\d+)').astype(int)
+
+    # Step 5: Create `elapsed_time` column
+    processed_df['time_elapsed'] = np.where(
+        processed_df['header'] == "WV_TRANST_IMPED",
+        processed_df['sequence_num'] + (1 / 30) * processed_df['sample_num'],
+        processed_df['sequence_num'] + (1 / 50) * processed_df['sample_num']
+    )
+
+    # Step 6: Rearrange columns
+    processed_df = processed_df[['header', 'RTC_timestamp', 'time_elapsed', 'sequence_num', 'num_samples', 'value']]
+
+    # Step 7: Sort by `time_elapsed`
+    processed_df = processed_df.sort_values(by='time_elapsed')
+
+    # Step 8: Convert `value` to string
+    processed_df['value'] = processed_df['value'].astype(str)
+
+    # Step 9: Create TTI column
+    processed_df['TTI'] = np.where(
+        processed_df['header'] == "WV_TRANST_IMPED",
+        processed_df['value'],
+        np.nan
+    )
+
+    # Step 10: Convert TTI to ohms
+    processed_df['TTI'] = pd.to_numeric(processed_df['TTI'], errors='coerce')
+    processed_df['TTI'] = (processed_df['TTI'] * 0.04176689) - 8.5538812
+
+    return processed_df
+
+def process_data_frame_step_2(processed_df):
+    """
+    Adds IMU acceleration and gyroscope data (accel_X, accel_Y, accel_Z, gyro_X, gyro_Y, gyro_Z)
+    by applying `extract_IMU_values` function row-wise to the DataFrame.
+
+    Args:
+        processed_df (pd.DataFrame): DataFrame from the previous processing step.
+
+    Returns:
+        pd.DataFrame: Updated DataFrame with new columns for IMU values.
+    """
+
+    def extract_channel(header, value, channel):
+        if header == "WV_TRANST_IMPED":
+            return np.nan
+        elif header == "WV_IMU":
+            return extract_IMU_values(value, channel)
+        else:
+            return np.nan
+
+    # Apply extract_channel function row-wise for each channel
+    processed_df['accel_X'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "accel_x"), axis=1
+    )
+    processed_df['accel_Y'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "accel_y"), axis=1
+    )
+    processed_df['accel_Z'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "accel_z"), axis=1
+    )
+    processed_df['gyro_X'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "gyro_x"), axis=1
+    )
+    processed_df['gyro_Y'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "gyro_y"), axis=1
+    )
+    processed_df['gyro_Z'] = processed_df.apply(
+        lambda row: extract_channel(row['header'], row['value'], "gyro_z"), axis=1
+    )
+
+    return processed_df
+
+step_1_df = process_data_frame_step_1(raw_df)
+step_2_df = process_data_frame_step_2(step_1_df)
+clean_df = step_2_df.drop(columns=['value', 'header', 'RTC_timestamp', 'num_samples'])
+
+clean_df.to_csv("processed data/output.csv", na_rep = "NA", index = False)

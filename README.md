@@ -1,21 +1,47 @@
-# Python-Based Hex Parser
+# Implantable-Device Hex Log Parser
 
-Data parsing executable written for Lunair Medical in Python. Converts raw hex data from an IPG into a readable csv file in format reminiscent of the Integer Programmer's marker mode output.
+Python tool independently developed during my 2024 software engineering internship at Lunair Medical, a medical-device startup focused on sleep apnea. It converts hexadecimal logs from prototype implantable pulse generators (IPGs) into structured CSV files for inspection and analysis.
 
+## Project Highlights
 
-## Components:
+- Reverse-engineered the undocumented device-log format and implemented decoding logic in Python.
+- Converted encoded packet and sample data into tabular output suitable for downstream analysis.
+- Built an interactive file-selection workflow with progress indicators and repeat processing.
+- Packaged the tool as a standalone Windows executable for users who did not need to work with the Python source.
 
-The compiled program comes in the form of one executable file (`Hex Parser (vX.X.X).exe`), two folders, and this readme. Both folders — `/raw_data` and `/processed_data` — are relevant to the operation of the executable.
+## How It Works
 
-Four files are contained in the `/raw_data` folder: `example_data.txt`, `example_data.hex`, `example_data_2_(large).txt`, and `example_data_2_(large).hex`. There is no functional difference between the `.hex` and `.txt` extensions for files of the same name; they are present in order to communicate that the parser can work with either file type. In effect, this means that there are really only two sets of sample data.
+1. Place a supported `.hex` or `.txt` log in `raw_data/`.
+2. Launch the parser from the repository directory.
+3. Select a file from the numbered list.
+4. Collect the resulting CSV from `processed_data/`.
 
-The `\processed_data` folder will be empty upon installation.
+The parser creates the output directory if needed and prompts the user to process another file after each run. Processing time depends on log size.
 
+## Repository Structure
 
-## Use:
+| Location | Purpose |
+|---|---|
+| `main.py` | Log decoding, data transformation, and interactive processing |
+| `raw_data/` | Example logs and input location |
+| `processed_data/` | Generated CSV output location |
 
-To use the parser, open the `Hex Parser (vX.X.X).exe` file. The terminal will read the contents of the `/raw_data` folder, and then prompt the user to select which of the files within, as denoted by assigned numbers, to parse. This process may take a couple of seconds. The list will contain solely files with the `.hex` and `.txt` file extensions, and ignore everything else. **In order for the program to properly parse a file, that file must be contained within the `/raw_data` folder before the executable is run, in addition to being the proper file type (`.hex`, `.txt`).** If no applicable files are present in the `raw_data` folder, the program will terminate.
+The `.hex` and `.txt` examples with matching names contain the same sample data in alternative file extensions.
 
-Once the user selects an applicable file from the list, the parser wil read, process, and write the file in a series of steps. Loading bars for each step are present to ensure that the program hasn't stalled in some way. Large files are liable to take several minutes to process. Processed files can be found in the `/processed_data` folder, and are always formatted as csv files.
+## Running from Source
 
-When the parser is finished processing and writing a file, it will ask the user whether they wish to parse another file (by typing y), or exit the program (by typing n). The parser will also terminate if, after it finishes processing a file, it recieves no input for a period of five minutes. Termination in this manner poses no risk to output files, as they will be necessarily already finished.
+The source imports pandas, NumPy, and the `progressbar` module. With those dependencies installed, run from the repository root:
+
+```bash
+python main.py
+```
+
+The working directory matters because the script uses relative input and output paths. The internship tool was distributed as a Windows executable; the supplied source archive does not include that executable.
+
+## Scope and Limitations
+
+This is a historical tool for a specific prototype-device log format, rather than a general hexadecimal parser. Other devices or changed packet layouts require corresponding changes to the decoding logic. The CSV output supports engineering analysis; compatibility with unrelated device formats is not implied.
+
+## Tools
+
+Python, pandas, NumPy, and progress indicators through the `progressbar` module.
